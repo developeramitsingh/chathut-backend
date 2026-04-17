@@ -37,11 +37,23 @@ __decorate([
 __decorate([
     (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
+], Room.prototype, "femaleSpeakerId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
 ], Room.prototype, "otherSpeaker", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], Room.prototype, "otherSpeakerId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
 ], Room.prototype, "listeners", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: [] }),
+    __metadata("design:type", Array)
+], Room.prototype, "queue", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ default: true }),
     __metadata("design:type", Boolean)

@@ -1,50 +1,12 @@
-import { Injectable, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Room, RoomDocument } from './room.schema';
 import { UserDocument } from '../users/user.schema';
 
 @Injectable()
-export class RoomsService implements OnModuleInit {
+export class RoomsService {
   constructor(@InjectModel(Room.name) private readonly roomModel: Model<RoomDocument>) {}
-
-  async onModuleInit() {
-    const count = await this.roomModel.countDocuments().exec();
-    if (count === 0) {
-      await this.roomModel.insertMany([
-        {
-          name: 'Morning Vibes',
-          hostId: 'default-host-1',
-          hostName: 'Sia',
-          hostGender: 'female',
-          femaleSpeaker: 'Ari',
-          otherSpeaker: 'Jay',
-          listeners: 980,
-          isLive: true,
-        },
-        {
-          name: 'Chill Beats',
-          hostId: 'default-host-2',
-          hostName: 'Rohan',
-          hostGender: 'male',
-          femaleSpeaker: 'Nina',
-          otherSpeaker: null,
-          listeners: 1430,
-          isLive: true,
-        },
-        {
-          name: 'Trending Talk',
-          hostId: 'default-host-3',
-          hostName: 'Mira',
-          hostGender: 'female',
-          femaleSpeaker: null,
-          otherSpeaker: 'Sam',
-          listeners: 628,
-          isLive: true,
-        },
-      ]);
-    }
-  }
 
   async findAll(): Promise<Room[]> {
     return this.roomModel.find().lean();
@@ -59,44 +21,103 @@ export class RoomsService implements OnModuleInit {
       name,
       hostId: user._id.toString(),
       hostName: user.name,
-      hostGender: user.gender,
+      hostGender: user.gender || 'unknown',
       femaleSpeaker: null,
       otherSpeaker: null,
       listeners: 0,
+      queue: [],
       isLive: true,
     });
     return created.save();
   }
 
-  async join(roomId: string, user: UserDocument, role: 'listener' | 'femaleSpeaker' | 'coSpeaker'): Promise<Room> {
+  async join(roomId: string, user: UserDocument, role: 'listener' | 'femaleSpeaker' | 'coSpeaker' | 'normalSpeaker'): Promise<Room> {
     const room = await this.roomModel.findById(roomId);
     if (!room) {
       throw new BadRequestException('Room not found');
     }
 
-    if (room.hostId === user._id.toString()) {
+    const userId = user._id.toString();
+    if (room.hostId === userId) {
       throw new ConflictException('Host is already in the room');
     }
 
-    if (room.femaleSpeaker === user.name || room.otherSpeaker === user.name) {
-      throw new ConflictException('You already have a role in this room');
+    if (
+      room.femaleSpeakerId === userId ||
+      room.otherSpeakerId === userId ||
+      room.queue.some(entry => entry.userId === userId)
+    ) {
+      throw new ConflictException('You already have a role or position in this room');
     }
 
     if (role === 'femaleSpeaker') {
-      if (user.gender !== 'female') {
-        throw new BadRequestException('Only female users can join as the female speaker');
+      if (user.role !== 'partner' || user.gender !== 'female') {
+        throw new BadRequestException('Only partner female users can join as the female speaker');
       }
-      if (room.femaleSpeaker) {
+      if (room.femaleSpeakerId) {
         throw new ConflictException('Female speaker slot is already taken');
       }
       room.femaleSpeaker = user.name;
-    } else if (role === 'coSpeaker') {
-      if (room.otherSpeaker) {
-        throw new ConflictException('Co-speaker slot is already taken');
+      room.femaleSpeakerId = userId;
+    } else if (role === 'coSpeaker' || role === 'normalSpeaker') {
+      if (user.role !== 'user') {
+        throw new BadRequestException('Only normal users can join as the guest speaker');
       }
-      room.otherSpeaker = user.name;
+      if (room.otherSpeakerId) {
+        room.queue.push({ userId, userName: user.name });
+      } else {
+        room.otherSpeaker = user.name;
+        room.otherSpeakerId = userId;
+      }
     } else {
       room.listeners += 1;
+    }
+
+    return room.save();
+  }
+
+  async leave(roomId: string, user: UserDocument): Promise<Room> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new BadRequestException('Room not found');
+    }
+
+    const userId = user._id.toString();
+    let changed = false;
+
+    if (room.femaleSpeakerId === userId) {
+      room.femaleSpeaker = null;
+      room.femaleSpeakerId = null;
+      changed = true;
+    }
+
+    if (room.otherSpeakerId === userId) {
+      if (room.queue.length > 0) {
+        const next = room.queue.shift();
+        room.otherSpeaker = next.userName;
+        room.otherSpeakerId = next.userId;
+      } else {
+        room.otherSpeaker = null;
+        room.otherSpeakerId = null;
+      }
+      changed = true;
+    }
+
+    const queueIndex = room.queue.findIndex(entry => entry.userId === userId);
+    if (queueIndex !== -1) {
+      room.queue.splice(queueIndex, 1);
+      changed = true;
+    }
+
+    if (!changed) {
+      if (room.listeners > 0) {
+        room.listeners = Math.max(0, room.listeners - 1);
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      throw new ConflictException('You are not part of this room');
     }
 
     return room.save();

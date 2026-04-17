@@ -6,8 +6,14 @@ export declare class Room {
     hostName: string;
     hostGender: string;
     femaleSpeaker?: string;
+    femaleSpeakerId?: string;
     otherSpeaker?: string;
+    otherSpeakerId?: string;
     listeners: number;
+    queue: Array<{
+        userId: string;
+        userName: string;
+    }>;
     isLive: boolean;
 }
 export declare const RoomSchema: import("mongoose").Schema<Room, import("mongoose").Model<Room, any, any, any, Document<unknown, any, Room> & Room & {

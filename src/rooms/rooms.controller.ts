@@ -41,4 +41,14 @@ export class RoomsController {
     }
     return this.roomsService.join(id, user, joinRoomDto.role);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/leave')
+  async leave(@Param('id') id: string, @Req() req: any) {
+    const user = await this.usersService.findById(req.user.sub);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.roomsService.leave(id, user);
+  }
 }

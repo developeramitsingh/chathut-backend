@@ -21,10 +21,19 @@ export class Room {
   femaleSpeaker?: string;
 
   @Prop()
+  femaleSpeakerId?: string;
+
+  @Prop()
   otherSpeaker?: string;
+
+  @Prop()
+  otherSpeakerId?: string;
 
   @Prop({ default: 0 })
   listeners: number;
+
+  @Prop({ default: [] })
+  queue: Array<{ userId: string; userName: string }>;
 
   @Prop({ default: true })
   isLive: boolean;

@@ -44,6 +44,13 @@ let RoomsController = class RoomsController {
         }
         return this.roomsService.join(id, user, joinRoomDto.role);
     }
+    async leave(id, req) {
+        const user = await this.usersService.findById(req.user.sub);
+        if (!user) {
+            throw new common_1.NotFoundException('User not found');
+        }
+        return this.roomsService.leave(id, user);
+    }
 };
 exports.RoomsController = RoomsController;
 __decorate([
@@ -78,6 +85,15 @@ __decorate([
     __metadata("design:paramtypes", [String, join_room_dto_1.JoinRoomDto, Object]),
     __metadata("design:returntype", Promise)
 ], RoomsController.prototype, "join", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Post)(':id/leave'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], RoomsController.prototype, "leave", null);
 exports.RoomsController = RoomsController = __decorate([
     (0, common_1.Controller)('rooms'),
     __metadata("design:paramtypes", [rooms_service_1.RoomsService,

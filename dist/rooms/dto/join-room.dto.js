@@ -17,7 +17,7 @@ exports.JoinRoomDto = JoinRoomDto;
 __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsIn)(['listener', 'femaleSpeaker', 'coSpeaker']),
+    (0, class_validator_1.IsIn)(['listener', 'femaleSpeaker', 'coSpeaker', 'normalSpeaker']),
     __metadata("design:type", String)
 ], JoinRoomDto.prototype, "role", void 0);
 //# sourceMappingURL=join-room.dto.js.map

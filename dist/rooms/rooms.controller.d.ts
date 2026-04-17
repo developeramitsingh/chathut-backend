@@ -10,4 +10,5 @@ export declare class RoomsController {
     findOne(id: string): Promise<import("./room.schema").Room>;
     create(createRoomDto: CreateRoomDto, req: any): Promise<import("./room.schema").Room>;
     join(id: string, joinRoomDto: JoinRoomDto, req: any): Promise<import("./room.schema").Room>;
+    leave(id: string, req: any): Promise<import("./room.schema").Room>;
 }
