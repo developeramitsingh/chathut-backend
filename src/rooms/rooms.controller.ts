@@ -4,12 +4,14 @@ import { CreateRoomDto } from './dto/create-room.dto';
 import { JoinRoomDto } from './dto/join-room.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
+import { RoomsGateway } from './rooms.gateway';
 
 @Controller('rooms')
 export class RoomsController {
   constructor(
     private readonly roomsService: RoomsService,
     private readonly usersService: UsersService,
+    private readonly roomsGateway: RoomsGateway,
   ) {}
 
   @Get()
@@ -29,7 +31,9 @@ export class RoomsController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.roomsService.create(createRoomDto.name, user);
+    const room = await this.roomsService.create(createRoomDto.name, user);
+    this.roomsGateway.broadcastRoomUpdate(room);
+    return room;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -39,7 +43,9 @@ export class RoomsController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.roomsService.join(id, user, joinRoomDto.role);
+    const room = await this.roomsService.join(id, user, joinRoomDto.role);
+    this.roomsGateway.broadcastRoomUpdate(room);
+    return room;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -49,6 +55,8 @@ export class RoomsController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.roomsService.leave(id, user);
+    const room = await this.roomsService.leave(id, user);
+    this.roomsGateway.broadcastRoomUpdate(room);
+    return room;
   }
 }

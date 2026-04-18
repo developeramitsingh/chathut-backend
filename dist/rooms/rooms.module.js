@@ -10,6 +10,7 @@ exports.RoomsModule = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const rooms_controller_1 = require("./rooms.controller");
+const rooms_gateway_1 = require("./rooms.gateway");
 const rooms_service_1 = require("./rooms.service");
 const room_schema_1 = require("./room.schema");
 const auth_module_1 = require("../auth/auth.module");
@@ -25,7 +26,7 @@ exports.RoomsModule = RoomsModule = __decorate([
             users_module_1.UsersModule,
         ],
         controllers: [rooms_controller_1.RoomsController],
-        providers: [rooms_service_1.RoomsService],
+        providers: [rooms_service_1.RoomsService, rooms_gateway_1.RoomsGateway],
     })
 ], RoomsModule);
 //# sourceMappingURL=rooms.module.js.map

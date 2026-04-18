@@ -19,10 +19,12 @@ const create_room_dto_1 = require("./dto/create-room.dto");
 const join_room_dto_1 = require("./dto/join-room.dto");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const users_service_1 = require("../users/users.service");
+const rooms_gateway_1 = require("./rooms.gateway");
 let RoomsController = class RoomsController {
-    constructor(roomsService, usersService) {
+    constructor(roomsService, usersService, roomsGateway) {
         this.roomsService = roomsService;
         this.usersService = usersService;
+        this.roomsGateway = roomsGateway;
     }
     async findAll() {
         return this.roomsService.findAll();
@@ -35,21 +37,27 @@ let RoomsController = class RoomsController {
         if (!user) {
             throw new common_1.NotFoundException('User not found');
         }
-        return this.roomsService.create(createRoomDto.name, user);
+        const room = await this.roomsService.create(createRoomDto.name, user);
+        this.roomsGateway.broadcastRoomUpdate(room);
+        return room;
     }
     async join(id, joinRoomDto, req) {
         const user = await this.usersService.findById(req.user.sub);
         if (!user) {
             throw new common_1.NotFoundException('User not found');
         }
-        return this.roomsService.join(id, user, joinRoomDto.role);
+        const room = await this.roomsService.join(id, user, joinRoomDto.role);
+        this.roomsGateway.broadcastRoomUpdate(room);
+        return room;
     }
     async leave(id, req) {
         const user = await this.usersService.findById(req.user.sub);
         if (!user) {
             throw new common_1.NotFoundException('User not found');
         }
-        return this.roomsService.leave(id, user);
+        const room = await this.roomsService.leave(id, user);
+        this.roomsGateway.broadcastRoomUpdate(room);
+        return room;
     }
 };
 exports.RoomsController = RoomsController;
@@ -97,6 +105,7 @@ __decorate([
 exports.RoomsController = RoomsController = __decorate([
     (0, common_1.Controller)('rooms'),
     __metadata("design:paramtypes", [rooms_service_1.RoomsService,
-        users_service_1.UsersService])
+        users_service_1.UsersService,
+        rooms_gateway_1.RoomsGateway])
 ], RoomsController);
 //# sourceMappingURL=rooms.controller.js.map
