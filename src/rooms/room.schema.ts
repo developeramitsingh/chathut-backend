@@ -35,6 +35,20 @@ export class Room {
   @Prop({ default: [] })
   queue: Array<{ userId: string; userName: string }>;
 
+  @Prop({ default: [] })
+  joinRequests: Array<{
+    userId: string;
+    userName: string;
+    role: 'listener' | 'femaleSpeaker' | 'coSpeaker' | 'normalSpeaker';
+  }>;
+
+  @Prop({ default: [] })
+  participants: Array<{
+    userId: string;
+    userName: string;
+    role: 'listener' | 'femaleSpeaker' | 'coSpeaker' | 'queue';
+  }>;
+
   @Prop({ default: true })
   isLive: boolean;
 }

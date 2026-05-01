@@ -55,6 +55,14 @@ __decorate([
     __metadata("design:type", Array)
 ], Room.prototype, "queue", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ default: [] }),
+    __metadata("design:type", Array)
+], Room.prototype, "joinRequests", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: [] }),
+    __metadata("design:type", Array)
+], Room.prototype, "participants", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: true }),
     __metadata("design:type", Boolean)
 ], Room.prototype, "isLive", void 0);

@@ -12,7 +12,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RoomsGateway = void 0;
 const websockets_1 = require("@nestjs/websockets");
 const socket_io_1 = require("socket.io");
+const jwt_1 = require("@nestjs/jwt");
 let RoomsGateway = class RoomsGateway {
+    constructor(jwtService) {
+        this.jwtService = jwtService;
+        this.userSocketMap = new Map();
+        this.socketUserMap = new Map();
+    }
+    handleConnection(client) {
+        try {
+            const token = client.handshake.auth?.token ||
+                client.handshake.headers?.authorization?.replace('Bearer ', '');
+            if (!token)
+                return;
+            const payload = this.jwtService.verify(token);
+            const userId = payload.sub?.toString();
+            if (userId) {
+                this.userSocketMap.set(userId, client.id);
+                this.socketUserMap.set(client.id, userId);
+            }
+        }
+        catch {
+        }
+    }
+    handleDisconnect(client) {
+        const userId = this.socketUserMap.get(client.id);
+        if (userId) {
+            this.userSocketMap.delete(userId);
+            this.socketUserMap.delete(client.id);
+        }
+    }
     handleSubscribeRoom(client, payload) {
         if (payload?.roomId) {
             client.join(payload.roomId);
@@ -24,10 +53,9 @@ let RoomsGateway = class RoomsGateway {
         }
     }
     broadcastRoomUpdate(room) {
-        const roomId = room._id?.toString() ?? room.id?.toString();
-        if (!roomId) {
+        let roomId = room._id?.toString() || room.id?.toString();
+        if (!roomId)
             return;
-        }
         this.server.to(roomId).emit('roomUpdated', room);
     }
 };
@@ -54,6 +82,7 @@ exports.RoomsGateway = RoomsGateway = __decorate([
             origin: '*',
             methods: ['GET', 'POST'],
         },
-    })
+    }),
+    __metadata("design:paramtypes", [jwt_1.JwtService])
 ], RoomsGateway);
 //# sourceMappingURL=rooms.gateway.js.map

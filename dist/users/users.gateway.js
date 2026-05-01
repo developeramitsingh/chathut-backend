@@ -23,7 +23,7 @@ let UsersGateway = class UsersGateway {
         this.userToSocket = new Map();
     }
     async handleConnection(client) {
-        const token = client.handshake.auth['token'];
+        const token = (client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', ''));
         if (!token) {
             client.disconnect(true);
             return;
