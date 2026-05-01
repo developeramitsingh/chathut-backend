@@ -7,11 +7,15 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { CallHistory, CallHistoryDocument } from './call-history.schema';
 import { User, UserDocument } from './user.schema';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(CallHistory.name) private callHistoryModel: Model<CallHistoryDocument>,
+  ) {}
 
   async onModuleInit() {
     await this.userModel.updateMany({ isOnline: true }, { isOnline: false }).exec();
@@ -158,5 +162,63 @@ export class UsersService implements OnModuleInit {
       partnerWalletBalance: updatedPartner?.walletBalance ?? (partner.walletBalance ?? 0),
       partnerTotalEarnings: updatedPartner?.totalEarnings ?? (partner.totalEarnings ?? 0),
     };
+  }
+
+  async recordFriendCircleCallHistory(input: {
+    callerId: string;
+    partnerId: string;
+    callerName: string;
+    partnerName: string;
+    startedAt: Date;
+    endedAt: Date;
+    durationMinutes: number;
+    chargedCoins: number;
+    creditedCoins: number;
+  }): Promise<void> {
+    await this.callHistoryModel.create({
+      callerId: input.callerId,
+      partnerId: input.partnerId,
+      callerName: input.callerName,
+      partnerName: input.partnerName,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      durationMinutes: Math.max(1, input.durationMinutes),
+      chargedCoins: Math.max(0, input.chargedCoins),
+      creditedCoins: Math.max(0, input.creditedCoins),
+    });
+  }
+
+  async getCallHistoryForUser(userId: string): Promise<
+    Array<{
+      id: string;
+      direction: 'outgoing' | 'incoming';
+      counterpartyName: string;
+      startedAt: Date;
+      endedAt: Date;
+      durationMinutes: number;
+      chargedCoins: number;
+      earnedCoins: number;
+    }>
+  > {
+    const rows = await this.callHistoryModel
+      .find({ $or: [{ callerId: userId }, { partnerId: userId }] })
+      .sort({ endedAt: -1 })
+      .limit(100)
+      .lean()
+      .exec();
+
+    return rows.map((row: any) => {
+      const isCaller = row.callerId === userId;
+      return {
+        id: row._id?.toString() ?? '',
+        direction: isCaller ? 'outgoing' : 'incoming',
+        counterpartyName: isCaller ? row.partnerName : row.callerName,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        durationMinutes: row.durationMinutes ?? 0,
+        chargedCoins: isCaller ? row.chargedCoins ?? 0 : 0,
+        earnedCoins: isCaller ? 0 : row.creditedCoins ?? 0,
+      };
+    });
   }
 }

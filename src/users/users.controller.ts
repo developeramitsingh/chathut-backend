@@ -47,6 +47,12 @@ export class UsersController {
     return this.usersService.getWalletSummary(userId);
   }
 
+  @Get('call-history')
+  async getCallHistory(@Req() req: any) {
+    const userId = this.getUserIdFromRequest(req);
+    return this.usersService.getCallHistoryForUser(userId);
+  }
+
   @Post('wallet/deposit')
   async depositWallet(@Req() req: any, @Body() dto: DepositCoinsDto) {
     const userId = this.getUserIdFromRequest(req);

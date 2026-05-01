@@ -12,6 +12,8 @@ import { COINS_PER_MINUTE } from './constants/wallet.constants';
 type ActiveCallSession = {
   callerId: string;
   partnerId: string;
+  callerName: string;
+  partnerName: string;
   startedAt: number;
   settledMinutes: number;
   chargedCoinsTotal: number;
@@ -98,12 +100,25 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
-    const elapsedMs = Date.now() - session.startedAt;
+    const endedAtMs = Date.now();
+    const elapsedMs = endedAtMs - session.startedAt;
     const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
     const remainingMinutes = Math.max(0, elapsedMinutes - session.settledMinutes);
     if (remainingMinutes > 0) {
       await this.settleCallMinutesByKey(key, remainingMinutes);
     }
+
+    await this.usersService.recordFriendCircleCallHistory({
+      callerId: session.callerId,
+      partnerId: session.partnerId,
+      callerName: session.callerName,
+      partnerName: session.partnerName,
+      startedAt: new Date(session.startedAt),
+      endedAt: new Date(endedAtMs),
+      durationMinutes: elapsedMinutes,
+      chargedCoins: session.chargedCoinsTotal,
+      creditedCoins: session.earnedCoinsTotal,
+    });
 
     this.activeCallSessions.delete(key);
   }
@@ -245,11 +260,19 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
+    const caller = await this.usersService.findById(payload.callerId);
+    if (!caller) {
+      client.emit('callFailed', { reason: 'Caller profile not found' });
+      return;
+    }
+
     const sessionKey = this.buildCallKey(payload.callerId, partnerId);
     if (!this.activeCallSessions.has(sessionKey)) {
       this.activeCallSessions.set(sessionKey, {
         callerId: payload.callerId,
         partnerId,
+        callerName: caller.name,
+        partnerName: partner.name,
         startedAt: Date.now(),
         settledMinutes: 0,
         chargedCoinsTotal: 0,
