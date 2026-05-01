@@ -438,6 +438,46 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     }
   }
 
+  @SubscribeMessage('sendDirectChatMessage')
+  async handleSendDirectChatMessage(
+    client: Socket,
+    payload: { targetId: string; message: string },
+  ) {
+    const fromUserId = this.socketToUser.get(client.id);
+    if (!fromUserId) {
+      return;
+    }
+
+    const rawMessage = payload?.message?.toString() ?? '';
+    const message = rawMessage.trim();
+    if (!payload?.targetId || !message) {
+      return;
+    }
+
+    const targetSocketId = this.getSocketIdForUser(payload.targetId);
+    if (!targetSocketId) {
+      client.emit('callFailed', { reason: 'Partner is offline for live chat' });
+      return;
+    }
+
+    const sender = await this.usersService.findById(fromUserId);
+    const fromName = sender?.name ?? 'User';
+    const sentAt = new Date().toISOString();
+
+    this.server.to(targetSocketId).emit('incomingDirectChatMessage', {
+      fromId: fromUserId,
+      fromName,
+      message,
+      sentAt,
+    });
+
+    client.emit('directChatMessageAck', {
+      toId: payload.targetId,
+      message,
+      sentAt,
+    });
+  }
+
   private async broadcastLiveUsers() {
     const users = await this.usersService.findLiveFemaleUsers();
     this.server.emit('liveUsers', users.map(user => ({
