@@ -214,7 +214,7 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
           }
           if (partnerSocketId) {
             this.server.to(partnerSocketId).emit('lowCoinsWarning', {
-              message: 'Caller coins are insufficient. Call will end soon.',
+              message: 'The user you are talking to has insufficient balance. Call will end soon.',
               graceSeconds: Math.floor(LOW_COINS_GRACE_MS / 1000),
             });
           }
