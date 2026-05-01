@@ -30,6 +30,8 @@ export declare class AuthService {
             gender: string;
             role: string;
             isOnline: boolean;
+            walletBalance: number;
+            totalEarnings: number;
         };
     }>;
 }

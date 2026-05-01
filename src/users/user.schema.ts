@@ -20,6 +20,12 @@ export class User {
   @Prop({ default: 'user' })
   role: string;
 
+  @Prop({ default: 0 })
+  walletBalance: number;
+
+  @Prop({ default: 0 })
+  totalEarnings: number;
+
   @Prop()
   email?: string;
 }

@@ -73,6 +73,8 @@ let AuthService = class AuthService {
                 gender: user.gender,
                 role: user.role,
                 isOnline: user.isOnline,
+                walletBalance: user.walletBalance ?? 0,
+                totalEarnings: user.totalEarnings ?? 0,
             },
         };
     }

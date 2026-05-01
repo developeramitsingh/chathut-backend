@@ -10,4 +10,17 @@ export declare class UsersService implements OnModuleInit {
     findById(id: string): Promise<UserDocument | null>;
     setOnlineStatus(id: string, isOnline: boolean): Promise<UserDocument | null>;
     findLiveFemaleUsers(): Promise<User[]>;
+    getWalletBalance(userId: string): Promise<number>;
+    getWalletSummary(userId: string): Promise<{
+        walletBalance: number;
+        totalEarnings: number;
+    }>;
+    depositCoins(userId: string, coins: number): Promise<number>;
+    debitCoins(userId: string, coins: number): Promise<number>;
+    settleFriendCircleCallCoins(callerId: string, partnerId: string, coins: number): Promise<{
+        debitedCoins: number;
+        callerWalletBalance: number;
+        partnerWalletBalance: number;
+        partnerTotalEarnings: number;
+    }>;
 }

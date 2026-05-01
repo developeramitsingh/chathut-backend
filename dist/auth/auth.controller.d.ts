@@ -29,6 +29,8 @@ export declare class AuthController {
             gender: string;
             role: string;
             isOnline: boolean;
+            walletBalance: number;
+            totalEarnings: number;
         };
     }>;
 }

@@ -3,6 +3,13 @@ import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
+import { COINS_PER_MINUTE } from './constants/wallet.constants';
+
+type ActiveCallSession = {
+  callerId: string;
+  partnerId: string;
+  startedAt: number;
+};
 
 @WebSocketGateway({
   cors: {
@@ -16,6 +23,7 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private socketToUser = new Map<string, string>();
   private userToSocket = new Map<string, string>();
+  private activeCallSessions = new Map<string, ActiveCallSession>();
 
   constructor(private readonly usersService: UsersService, private readonly configService: ConfigService) {}
 
@@ -44,10 +52,73 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!userId) {
       return;
     }
+
+    await this.finalizeCallForUser(userId);
     this.socketToUser.delete(client.id);
     this.userToSocket.delete(userId);
     await this.usersService.setOnlineStatus(userId, false);
     this.broadcastLiveUsers();
+  }
+
+  private buildCallKey(callerId: string, partnerId: string): string {
+    return `${callerId}:${partnerId}`;
+  }
+
+  private findActiveCallByUser(userId: string): { key: string; session: ActiveCallSession } | null {
+    for (const [key, session] of this.activeCallSessions.entries()) {
+      if (session.callerId === userId || session.partnerId === userId) {
+        return { key, session };
+      }
+    }
+    return null;
+  }
+
+  private async finalizeCallByKey(key: string) {
+    const session = this.activeCallSessions.get(key);
+    if (!session) {
+      return;
+    }
+
+    this.activeCallSessions.delete(key);
+
+    const elapsedMs = Date.now() - session.startedAt;
+    const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
+    const coinsToTransfer = elapsedMinutes * COINS_PER_MINUTE;
+
+    const settlement = await this.usersService.settleFriendCircleCallCoins(
+      session.callerId,
+      session.partnerId,
+      coinsToTransfer,
+    );
+
+    const callerSocketId = this.getSocketIdForUser(session.callerId);
+    if (callerSocketId) {
+      this.server.to(callerSocketId).emit('callCoinsSettled', {
+        minutes: elapsedMinutes,
+        rate: COINS_PER_MINUTE,
+        chargedCoins: settlement.debitedCoins,
+        walletBalance: settlement.callerWalletBalance,
+      });
+    }
+
+    const partnerSocketId = this.getSocketIdForUser(session.partnerId);
+    if (partnerSocketId) {
+      this.server.to(partnerSocketId).emit('callEarningsCredited', {
+        minutes: elapsedMinutes,
+        rate: COINS_PER_MINUTE,
+        creditedCoins: settlement.debitedCoins,
+        walletBalance: settlement.partnerWalletBalance,
+        totalEarnings: settlement.partnerTotalEarnings,
+      });
+    }
+  }
+
+  private async finalizeCallForUser(userId: string) {
+    const active = this.findActiveCallByUser(userId);
+    if (!active) {
+      return;
+    }
+    await this.finalizeCallByKey(active.key);
   }
 
   private getSocketIdForUser(userId: string): string | undefined {
@@ -112,6 +183,15 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    const sessionKey = this.buildCallKey(payload.callerId, partnerId);
+    if (!this.activeCallSessions.has(sessionKey)) {
+      this.activeCallSessions.set(sessionKey, {
+        callerId: payload.callerId,
+        partnerId,
+        startedAt: Date.now(),
+      });
+    }
+
     this.server.to(callerSocketId).emit('callAccepted', {
       partnerId,
       partnerName: partner.name,
@@ -143,6 +223,19 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('endCall')
   async handleEndCall(client: Socket, payload: { targetId: string }) {
+    const fromUserId = this.socketToUser.get(client.id);
+    if (fromUserId && payload?.targetId) {
+      const directKey = this.buildCallKey(fromUserId, payload.targetId);
+      const reverseKey = this.buildCallKey(payload.targetId, fromUserId);
+      if (this.activeCallSessions.has(directKey)) {
+        await this.finalizeCallByKey(directKey);
+      } else if (this.activeCallSessions.has(reverseKey)) {
+        await this.finalizeCallByKey(reverseKey);
+      } else {
+        await this.finalizeCallForUser(fromUserId);
+      }
+    }
+
     const targetSocketId = this.getSocketIdForUser(payload.targetId);
     if (targetSocketId) {
       this.server.to(targetSocketId).emit('callEnded');

@@ -1,4 +1,10 @@
-import { Injectable, ConflictException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
@@ -34,5 +40,123 @@ export class UsersService implements OnModuleInit {
 
   async findLiveFemaleUsers(): Promise<User[]> {
     return this.userModel.find({ gender: 'female', role: 'partner', isOnline: true }).lean().exec();
+  }
+
+  async getWalletBalance(userId: string): Promise<number> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user.walletBalance ?? 0;
+  }
+
+  async getWalletSummary(userId: string): Promise<{ walletBalance: number; totalEarnings: number }> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      walletBalance: user.walletBalance ?? 0,
+      totalEarnings: user.totalEarnings ?? 0,
+    };
+  }
+
+  async depositCoins(userId: string, coins: number): Promise<number> {
+    if (!Number.isInteger(coins) || coins <= 0) {
+      throw new BadRequestException('Deposit coins must be a positive integer');
+    }
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(userId, { $inc: { walletBalance: coins } }, { new: true })
+      .exec();
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return updated.walletBalance ?? 0;
+  }
+
+  async debitCoins(userId: string, coins: number): Promise<number> {
+    if (!Number.isInteger(coins) || coins <= 0) {
+      throw new BadRequestException('Debit coins must be a positive integer');
+    }
+
+    const existingUser = await this.findById(userId);
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    const currentBalance = existingUser.walletBalance ?? 0;
+    if (currentBalance < coins) {
+      throw new BadRequestException('Insufficient coins. Please deposit coins.');
+    }
+
+    const updated = await this.userModel
+      .findOneAndUpdate(
+        { _id: userId, walletBalance: { $gte: coins } },
+        { $inc: { walletBalance: -coins } },
+        { new: true },
+      )
+      .exec();
+
+    if (!updated) {
+      throw new BadRequestException('Insufficient coins. Please deposit coins.');
+    }
+
+    return updated.walletBalance ?? 0;
+  }
+
+  async settleFriendCircleCallCoins(
+    callerId: string,
+    partnerId: string,
+    coins: number,
+  ): Promise<{
+    debitedCoins: number;
+    callerWalletBalance: number;
+    partnerWalletBalance: number;
+    partnerTotalEarnings: number;
+  }> {
+    if (!Number.isInteger(coins) || coins <= 0) {
+      throw new BadRequestException('Settled coins must be a positive integer');
+    }
+
+    const caller = await this.findById(callerId);
+    if (!caller) {
+      throw new NotFoundException('Caller not found');
+    }
+
+    const partner = await this.findById(partnerId);
+    if (!partner) {
+      throw new NotFoundException('Partner not found');
+    }
+
+    const callerCurrent = caller.walletBalance ?? 0;
+    const debitedCoins = Math.min(callerCurrent, coins);
+
+    let callerWalletBalance = callerCurrent;
+    if (debitedCoins > 0) {
+      const updatedCaller = await this.userModel
+        .findByIdAndUpdate(callerId, { $inc: { walletBalance: -debitedCoins } }, { new: true })
+        .exec();
+
+      callerWalletBalance = updatedCaller?.walletBalance ?? Math.max(0, callerCurrent - debitedCoins);
+    }
+
+    const updatedPartner = await this.userModel
+      .findByIdAndUpdate(
+        partnerId,
+        { $inc: { walletBalance: debitedCoins, totalEarnings: debitedCoins } },
+        { new: true },
+      )
+      .exec();
+
+    return {
+      debitedCoins,
+      callerWalletBalance,
+      partnerWalletBalance: updatedPartner?.walletBalance ?? (partner.walletBalance ?? 0),
+      partnerTotalEarnings: updatedPartner?.totalEarnings ?? (partner.totalEarnings ?? 0),
+    };
   }
 }

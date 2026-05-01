@@ -8,9 +8,14 @@ export declare class UsersGateway implements OnGatewayConnection, OnGatewayDisco
     server: Server;
     private socketToUser;
     private userToSocket;
+    private activeCallSessions;
     constructor(usersService: UsersService, configService: ConfigService);
     handleConnection(client: Socket): Promise<void>;
     handleDisconnect(client: Socket): Promise<void>;
+    private buildCallKey;
+    private findActiveCallByUser;
+    private finalizeCallByKey;
+    private finalizeCallForUser;
     private getSocketIdForUser;
     handleGetLiveUsers(client: Socket): Promise<void>;
     handleCallPartner(client: Socket, payload: {

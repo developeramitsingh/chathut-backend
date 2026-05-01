@@ -1,0 +1,3 @@
+export const COINS_PER_MINUTE = 1;
+export const MINUTES_PER_DEBIT = 1;
+export const COINS_PER_DEBIT = COINS_PER_MINUTE * MINUTES_PER_DEBIT;

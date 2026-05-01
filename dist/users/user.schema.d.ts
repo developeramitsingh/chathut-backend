@@ -6,6 +6,8 @@ export declare class User {
     gender: string;
     isOnline: boolean;
     role: string;
+    walletBalance: number;
+    totalEarnings: number;
     email?: string;
 }
 export declare const UserSchema: import("mongoose").Schema<User, import("mongoose").Model<User, any, any, any, Document<unknown, any, User> & User & {

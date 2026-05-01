@@ -15,12 +15,14 @@ const socket_io_1 = require("socket.io");
 const jsonwebtoken_1 = require("jsonwebtoken");
 const config_1 = require("@nestjs/config");
 const users_service_1 = require("./users.service");
+const wallet_constants_1 = require("./constants/wallet.constants");
 let UsersGateway = class UsersGateway {
     constructor(usersService, configService) {
         this.usersService = usersService;
         this.configService = configService;
         this.socketToUser = new Map();
         this.userToSocket = new Map();
+        this.activeCallSessions = new Map();
     }
     async handleConnection(client) {
         const token = (client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', ''));
@@ -46,10 +48,59 @@ let UsersGateway = class UsersGateway {
         if (!userId) {
             return;
         }
+        await this.finalizeCallForUser(userId);
         this.socketToUser.delete(client.id);
         this.userToSocket.delete(userId);
         await this.usersService.setOnlineStatus(userId, false);
         this.broadcastLiveUsers();
+    }
+    buildCallKey(callerId, partnerId) {
+        return `${callerId}:${partnerId}`;
+    }
+    findActiveCallByUser(userId) {
+        for (const [key, session] of this.activeCallSessions.entries()) {
+            if (session.callerId === userId || session.partnerId === userId) {
+                return { key, session };
+            }
+        }
+        return null;
+    }
+    async finalizeCallByKey(key) {
+        const session = this.activeCallSessions.get(key);
+        if (!session) {
+            return;
+        }
+        this.activeCallSessions.delete(key);
+        const elapsedMs = Date.now() - session.startedAt;
+        const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
+        const coinsToTransfer = elapsedMinutes * wallet_constants_1.COINS_PER_MINUTE;
+        const settlement = await this.usersService.settleFriendCircleCallCoins(session.callerId, session.partnerId, coinsToTransfer);
+        const callerSocketId = this.getSocketIdForUser(session.callerId);
+        if (callerSocketId) {
+            this.server.to(callerSocketId).emit('callCoinsSettled', {
+                minutes: elapsedMinutes,
+                rate: wallet_constants_1.COINS_PER_MINUTE,
+                chargedCoins: settlement.debitedCoins,
+                walletBalance: settlement.callerWalletBalance,
+            });
+        }
+        const partnerSocketId = this.getSocketIdForUser(session.partnerId);
+        if (partnerSocketId) {
+            this.server.to(partnerSocketId).emit('callEarningsCredited', {
+                minutes: elapsedMinutes,
+                rate: wallet_constants_1.COINS_PER_MINUTE,
+                creditedCoins: settlement.debitedCoins,
+                walletBalance: settlement.partnerWalletBalance,
+                totalEarnings: settlement.partnerTotalEarnings,
+            });
+        }
+    }
+    async finalizeCallForUser(userId) {
+        const active = this.findActiveCallByUser(userId);
+        if (!active) {
+            return;
+        }
+        await this.finalizeCallByKey(active.key);
     }
     getSocketIdForUser(userId) {
         return this.userToSocket.get(userId);
@@ -101,6 +152,14 @@ let UsersGateway = class UsersGateway {
             client.emit('callFailed', { reason: 'Partner profile not found' });
             return;
         }
+        const sessionKey = this.buildCallKey(payload.callerId, partnerId);
+        if (!this.activeCallSessions.has(sessionKey)) {
+            this.activeCallSessions.set(sessionKey, {
+                callerId: payload.callerId,
+                partnerId,
+                startedAt: Date.now(),
+            });
+        }
         this.server.to(callerSocketId).emit('callAccepted', {
             partnerId,
             partnerName: partner.name,
@@ -126,6 +185,20 @@ let UsersGateway = class UsersGateway {
         });
     }
     async handleEndCall(client, payload) {
+        const fromUserId = this.socketToUser.get(client.id);
+        if (fromUserId && payload?.targetId) {
+            const directKey = this.buildCallKey(fromUserId, payload.targetId);
+            const reverseKey = this.buildCallKey(payload.targetId, fromUserId);
+            if (this.activeCallSessions.has(directKey)) {
+                await this.finalizeCallByKey(directKey);
+            }
+            else if (this.activeCallSessions.has(reverseKey)) {
+                await this.finalizeCallByKey(reverseKey);
+            }
+            else {
+                await this.finalizeCallForUser(fromUserId);
+            }
+        }
         const targetSocketId = this.getSocketIdForUser(payload.targetId);
         if (targetSocketId) {
             this.server.to(targetSocketId).emit('callEnded');
