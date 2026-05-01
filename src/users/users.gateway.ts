@@ -20,7 +20,7 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(private readonly usersService: UsersService, private readonly configService: ConfigService) {}
 
   async handleConnection(client: Socket) {
-    const token = client.handshake.auth['token'] as string | undefined;
+    const token = ((client.handshake.auth as any)?.token || (client.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '')) as string | undefined;
     if (!token) {
       client.disconnect(true);
       return;
