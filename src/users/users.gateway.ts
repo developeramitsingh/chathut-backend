@@ -19,7 +19,10 @@ type ActiveCallSession = {
   chargedCoinsTotal: number;
   earnedCoinsTotal: number;
   isSettling: boolean;
+  lowCoinsWarningAt: number | null;
 };
+
+const LOW_COINS_GRACE_MS = 10000;
 
 @WebSocketGateway({
   cors: {
@@ -94,16 +97,20 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     return null;
   }
 
-  private async finalizeCallByKey(key: string) {
+  private async finalizeCallByKey(key: string, options?: { settlePartialMinute?: boolean }) {
     const session = this.activeCallSessions.get(key);
     if (!session) {
       return;
     }
 
+    const settlePartialMinute = options?.settlePartialMinute ?? true;
     const endedAtMs = Date.now();
     const elapsedMs = endedAtMs - session.startedAt;
     const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
-    const remainingMinutes = Math.max(0, elapsedMinutes - session.settledMinutes);
+    const baseMinutes = settlePartialMinute
+      ? elapsedMinutes
+      : Math.max(0, Math.floor(elapsedMs / 60000));
+    const remainingMinutes = Math.max(0, baseMinutes - session.settledMinutes);
     if (remainingMinutes > 0) {
       await this.settleCallMinutesByKey(key, remainingMinutes);
     }
@@ -127,6 +134,19 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const now = Date.now();
     for (const [key, session] of this.activeCallSessions.entries()) {
       if (session.isSettling) {
+        continue;
+      }
+
+      if (session.lowCoinsWarningAt != null && now - session.lowCoinsWarningAt >= LOW_COINS_GRACE_MS) {
+        const callerSocketId = this.getSocketIdForUser(session.callerId);
+        const partnerSocketId = this.getSocketIdForUser(session.partnerId);
+        if (callerSocketId) {
+          this.server.to(callerSocketId).emit('callEnded');
+        }
+        if (partnerSocketId) {
+          this.server.to(partnerSocketId).emit('callEnded');
+        }
+        await this.finalizeCallByKey(key, { settlePartialMinute: false });
         continue;
       }
 
@@ -182,6 +202,24 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
           totalEarnings: settlement.partnerTotalEarnings,
         });
       }
+
+      if (settlement.callerWalletBalance <= 0) {
+        if (session.lowCoinsWarningAt == null) {
+          session.lowCoinsWarningAt = Date.now();
+          if (callerSocketId) {
+            this.server.to(callerSocketId).emit('lowCoinsWarning', {
+              message: 'Coins are insufficient to continue the call. Please add coins.',
+              graceSeconds: Math.floor(LOW_COINS_GRACE_MS / 1000),
+            });
+          }
+          if (partnerSocketId) {
+            this.server.to(partnerSocketId).emit('lowCoinsWarning', {
+              message: 'Caller coins are insufficient. Call will end soon.',
+              graceSeconds: Math.floor(LOW_COINS_GRACE_MS / 1000),
+            });
+          }
+        }
+      }
     } finally {
       const latestSession = this.activeCallSessions.get(key);
       if (latestSession) {
@@ -234,6 +272,14 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
+    const callerWallet = caller.walletBalance ?? 0;
+    if (callerWallet <= 0) {
+      client.emit('callFailed', {
+        reason: 'Insufficient coins. Please deposit before starting a call.',
+      });
+      return;
+    }
+
     this.server.to(targetSocketId).emit('incomingCall', {
       callerId,
       callerName: caller.name,
@@ -266,6 +312,20 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
+    const callerWallet = caller.walletBalance ?? 0;
+    if (callerWallet <= 0) {
+      const callerSocketIdForError = this.getSocketIdForUser(payload.callerId);
+      if (callerSocketIdForError) {
+        this.server.to(callerSocketIdForError).emit('callFailed', {
+          reason: 'Insufficient coins. Please deposit before starting a call.',
+        });
+      }
+      client.emit('callFailed', {
+        reason: 'Caller has insufficient coins to start this call.',
+      });
+      return;
+    }
+
     const sessionKey = this.buildCallKey(payload.callerId, partnerId);
     if (!this.activeCallSessions.has(sessionKey)) {
       this.activeCallSessions.set(sessionKey, {
@@ -278,6 +338,7 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         chargedCoinsTotal: 0,
         earnedCoinsTotal: 0,
         isSettling: false,
+        lowCoinsWarningAt: null,
       });
     }
 
