@@ -1,3 +1,7 @@
+import {
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
@@ -9,6 +13,10 @@ type ActiveCallSession = {
   callerId: string;
   partnerId: string;
   startedAt: number;
+  settledMinutes: number;
+  chargedCoinsTotal: number;
+  earnedCoinsTotal: number;
+  isSettling: boolean;
 };
 
 @WebSocketGateway({
@@ -17,15 +25,26 @@ type ActiveCallSession = {
     methods: ['GET', 'POST'],
   },
 })
-export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer()
   server: Server;
 
   private socketToUser = new Map<string, string>();
   private userToSocket = new Map<string, string>();
   private activeCallSessions = new Map<string, ActiveCallSession>();
+  private callBillingTicker: NodeJS.Timeout;
 
   constructor(private readonly usersService: UsersService, private readonly configService: ConfigService) {}
+
+  onModuleInit() {
+    this.callBillingTicker = setInterval(() => {
+      void this.settleLiveCallMinutes();
+    }, 5000);
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.callBillingTicker);
+  }
 
   async handleConnection(client: Socket) {
     const token = ((client.handshake.auth as any)?.token || (client.handshake.headers?.authorization as string | undefined)?.replace('Bearer ', '')) as string | undefined;
@@ -79,37 +98,80 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    this.activeCallSessions.delete(key);
-
     const elapsedMs = Date.now() - session.startedAt;
     const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
-    const coinsToTransfer = elapsedMinutes * COINS_PER_MINUTE;
-
-    const settlement = await this.usersService.settleFriendCircleCallCoins(
-      session.callerId,
-      session.partnerId,
-      coinsToTransfer,
-    );
-
-    const callerSocketId = this.getSocketIdForUser(session.callerId);
-    if (callerSocketId) {
-      this.server.to(callerSocketId).emit('callCoinsSettled', {
-        minutes: elapsedMinutes,
-        rate: COINS_PER_MINUTE,
-        chargedCoins: settlement.debitedCoins,
-        walletBalance: settlement.callerWalletBalance,
-      });
+    const remainingMinutes = Math.max(0, elapsedMinutes - session.settledMinutes);
+    if (remainingMinutes > 0) {
+      await this.settleCallMinutesByKey(key, remainingMinutes);
     }
 
-    const partnerSocketId = this.getSocketIdForUser(session.partnerId);
-    if (partnerSocketId) {
-      this.server.to(partnerSocketId).emit('callEarningsCredited', {
-        minutes: elapsedMinutes,
-        rate: COINS_PER_MINUTE,
-        creditedCoins: settlement.debitedCoins,
-        walletBalance: settlement.partnerWalletBalance,
-        totalEarnings: settlement.partnerTotalEarnings,
-      });
+    this.activeCallSessions.delete(key);
+  }
+
+  private async settleLiveCallMinutes() {
+    const now = Date.now();
+    for (const [key, session] of this.activeCallSessions.entries()) {
+      if (session.isSettling) {
+        continue;
+      }
+
+      const elapsedMs = now - session.startedAt;
+      const fullyCompletedMinutes = Math.max(0, Math.floor(elapsedMs / 60000));
+      const minutesToSettle = fullyCompletedMinutes - session.settledMinutes;
+      if (minutesToSettle <= 0) {
+        continue;
+      }
+
+      await this.settleCallMinutesByKey(key, minutesToSettle);
+    }
+  }
+
+  private async settleCallMinutesByKey(key: string, minutesToSettle: number) {
+    const session = this.activeCallSessions.get(key);
+    if (!session || minutesToSettle <= 0 || session.isSettling) {
+      return;
+    }
+
+    session.isSettling = true;
+    try {
+      const coinsToTransfer = minutesToSettle * COINS_PER_MINUTE;
+      const settlement = await this.usersService.settleFriendCircleCallCoins(
+        session.callerId,
+        session.partnerId,
+        coinsToTransfer,
+      );
+
+      session.settledMinutes += minutesToSettle;
+      session.chargedCoinsTotal += settlement.debitedCoins;
+      session.earnedCoinsTotal += settlement.debitedCoins;
+
+      const callerSocketId = this.getSocketIdForUser(session.callerId);
+      if (callerSocketId) {
+        this.server.to(callerSocketId).emit('callCoinsSettled', {
+          minutes: session.settledMinutes,
+          rate: COINS_PER_MINUTE,
+          chargedCoins: session.chargedCoinsTotal,
+          chargedCoinsDelta: settlement.debitedCoins,
+          walletBalance: settlement.callerWalletBalance,
+        });
+      }
+
+      const partnerSocketId = this.getSocketIdForUser(session.partnerId);
+      if (partnerSocketId) {
+        this.server.to(partnerSocketId).emit('callEarningsCredited', {
+          minutes: session.settledMinutes,
+          rate: COINS_PER_MINUTE,
+          creditedCoins: session.earnedCoinsTotal,
+          creditedCoinsDelta: settlement.debitedCoins,
+          walletBalance: settlement.partnerWalletBalance,
+          totalEarnings: settlement.partnerTotalEarnings,
+        });
+      }
+    } finally {
+      const latestSession = this.activeCallSessions.get(key);
+      if (latestSession) {
+        latestSession.isSettling = false;
+      }
     }
   }
 
@@ -189,6 +251,10 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callerId: payload.callerId,
         partnerId,
         startedAt: Date.now(),
+        settledMinutes: 0,
+        chargedCoinsTotal: 0,
+        earnedCoinsTotal: 0,
+        isSettling: false,
       });
     }
 
