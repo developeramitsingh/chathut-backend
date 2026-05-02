@@ -17,6 +17,16 @@ export declare class UsersController {
         walletBalance: number;
         totalEarnings: number;
     }>;
+    getCallHistory(req: any): Promise<{
+        id: string;
+        direction: "outgoing" | "incoming";
+        counterpartyName: string;
+        startedAt: Date;
+        endedAt: Date;
+        durationMinutes: number;
+        chargedCoins: number;
+        earnedCoins: number;
+    }[]>;
     depositWallet(req: any, dto: DepositCoinsDto): Promise<{
         walletBalance: number;
         totalEarnings: number;

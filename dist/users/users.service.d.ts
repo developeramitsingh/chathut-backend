@@ -1,9 +1,11 @@
 import { OnModuleInit } from '@nestjs/common';
 import { Model } from 'mongoose';
+import { CallHistoryDocument } from './call-history.schema';
 import { User, UserDocument } from './user.schema';
 export declare class UsersService implements OnModuleInit {
     private userModel;
-    constructor(userModel: Model<UserDocument>);
+    private callHistoryModel;
+    constructor(userModel: Model<UserDocument>, callHistoryModel: Model<CallHistoryDocument>);
     onModuleInit(): Promise<void>;
     create(user: Partial<User>): Promise<UserDocument>;
     findByPhone(phone: string): Promise<UserDocument | null>;
@@ -23,4 +25,25 @@ export declare class UsersService implements OnModuleInit {
         partnerWalletBalance: number;
         partnerTotalEarnings: number;
     }>;
+    recordFriendCircleCallHistory(input: {
+        callerId: string;
+        partnerId: string;
+        callerName: string;
+        partnerName: string;
+        startedAt: Date;
+        endedAt: Date;
+        durationMinutes: number;
+        chargedCoins: number;
+        creditedCoins: number;
+    }): Promise<void>;
+    getCallHistoryForUser(userId: string): Promise<Array<{
+        id: string;
+        direction: 'outgoing' | 'incoming';
+        counterpartyName: string;
+        startedAt: Date;
+        endedAt: Date;
+        durationMinutes: number;
+        chargedCoins: number;
+        earnedCoins: number;
+    }>>;
 }

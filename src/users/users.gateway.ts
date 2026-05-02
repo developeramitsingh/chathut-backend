@@ -22,6 +22,8 @@ type ActiveCallSession = {
   lowCoinsWarningAt: number | null;
 };
 
+type CallSource = 'friend' | 'room';
+
 const LOW_COINS_GRACE_MS = 10000;
 
 @WebSocketGateway({
@@ -254,11 +256,13 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   @SubscribeMessage('callPartner')
-  async handleCallPartner(client: Socket, payload: { targetId: string }) {
+  async handleCallPartner(client: Socket, payload: { targetId: string; source?: CallSource }) {
     const callerId = this.socketToUser.get(client.id);
     if (!callerId) {
       return;
     }
+
+    const source: CallSource = payload?.source === 'room' ? 'room' : 'friend';
 
     const targetSocketId = this.getSocketIdForUser(payload.targetId);
     if (!targetSocketId) {
@@ -272,27 +276,32 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
-    const callerWallet = caller.walletBalance ?? 0;
-    if (callerWallet <= 0) {
-      client.emit('callFailed', {
-        reason: 'Insufficient coins. Please deposit before starting a call.',
-      });
-      return;
+    if (source === 'friend') {
+      const callerWallet = caller.walletBalance ?? 0;
+      if (callerWallet <= 0) {
+        client.emit('callFailed', {
+          reason: 'Insufficient coins. Please deposit before starting a call.',
+        });
+        return;
+      }
     }
 
     this.server.to(targetSocketId).emit('incomingCall', {
       callerId,
       callerName: caller.name,
       callerPhone: caller.phone,
+      source,
     });
   }
 
   @SubscribeMessage('acceptCall')
-  async handleAcceptCall(client: Socket, payload: { callerId: string }) {
+  async handleAcceptCall(client: Socket, payload: { callerId: string; source?: CallSource }) {
     const partnerId = this.socketToUser.get(client.id);
     if (!partnerId) {
       return;
     }
+
+    const source: CallSource = payload?.source === 'room' ? 'room' : 'friend';
 
     const callerSocketId = this.getSocketIdForUser(payload.callerId);
     if (!callerSocketId) {
@@ -312,34 +321,36 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       return;
     }
 
-    const callerWallet = caller.walletBalance ?? 0;
-    if (callerWallet <= 0) {
-      const callerSocketIdForError = this.getSocketIdForUser(payload.callerId);
-      if (callerSocketIdForError) {
-        this.server.to(callerSocketIdForError).emit('callFailed', {
-          reason: 'Insufficient coins. Please deposit before starting a call.',
+    if (source === 'friend') {
+      const callerWallet = caller.walletBalance ?? 0;
+      if (callerWallet <= 0) {
+        const callerSocketIdForError = this.getSocketIdForUser(payload.callerId);
+        if (callerSocketIdForError) {
+          this.server.to(callerSocketIdForError).emit('callFailed', {
+            reason: 'Insufficient coins. Please deposit before starting a call.',
+          });
+        }
+        client.emit('callFailed', {
+          reason: 'Caller has insufficient coins to start this call.',
+        });
+        return;
+      }
+
+      const sessionKey = this.buildCallKey(payload.callerId, partnerId);
+      if (!this.activeCallSessions.has(sessionKey)) {
+        this.activeCallSessions.set(sessionKey, {
+          callerId: payload.callerId,
+          partnerId,
+          callerName: caller.name,
+          partnerName: partner.name,
+          startedAt: Date.now(),
+          settledMinutes: 0,
+          chargedCoinsTotal: 0,
+          earnedCoinsTotal: 0,
+          isSettling: false,
+          lowCoinsWarningAt: null,
         });
       }
-      client.emit('callFailed', {
-        reason: 'Caller has insufficient coins to start this call.',
-      });
-      return;
-    }
-
-    const sessionKey = this.buildCallKey(payload.callerId, partnerId);
-    if (!this.activeCallSessions.has(sessionKey)) {
-      this.activeCallSessions.set(sessionKey, {
-        callerId: payload.callerId,
-        partnerId,
-        callerName: caller.name,
-        partnerName: partner.name,
-        startedAt: Date.now(),
-        settledMinutes: 0,
-        chargedCoinsTotal: 0,
-        earnedCoinsTotal: 0,
-        isSettling: false,
-        lowCoinsWarningAt: null,
-      });
     }
 
     this.server.to(callerSocketId).emit('callAccepted', {

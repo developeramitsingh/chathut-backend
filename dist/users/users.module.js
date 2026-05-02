@@ -10,6 +10,7 @@ exports.UsersModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
+const call_history_schema_1 = require("./call-history.schema");
 const user_schema_1 = require("./user.schema");
 const users_controller_1 = require("./users.controller");
 const users_gateway_1 = require("./users.gateway");
@@ -19,7 +20,13 @@ let UsersModule = class UsersModule {
 exports.UsersModule = UsersModule;
 exports.UsersModule = UsersModule = __decorate([
     (0, common_1.Module)({
-        imports: [config_1.ConfigModule, mongoose_1.MongooseModule.forFeature([{ name: user_schema_1.User.name, schema: user_schema_1.UserSchema }])],
+        imports: [
+            config_1.ConfigModule,
+            mongoose_1.MongooseModule.forFeature([
+                { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
+                { name: call_history_schema_1.CallHistory.name, schema: call_history_schema_1.CallHistorySchema },
+            ]),
+        ],
         controllers: [users_controller_1.UsersController],
         providers: [users_service_1.UsersService, users_gateway_1.UsersGateway],
         exports: [users_service_1.UsersService],

@@ -53,6 +53,10 @@ let UsersController = class UsersController {
         const userId = this.getUserIdFromRequest(req);
         return this.usersService.getWalletSummary(userId);
     }
+    async getCallHistory(req) {
+        const userId = this.getUserIdFromRequest(req);
+        return this.usersService.getCallHistoryForUser(userId);
+    }
     async depositWallet(req, dto) {
         const userId = this.getUserIdFromRequest(req);
         const walletBalance = await this.usersService.depositCoins(userId, dto.coins);
@@ -82,6 +86,13 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getWallet", null);
+__decorate([
+    (0, common_1.Get)('call-history'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getCallHistory", null);
 __decorate([
     (0, common_1.Post)('wallet/deposit'),
     __param(0, (0, common_1.Req)()),

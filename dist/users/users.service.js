@@ -16,10 +16,12 @@ exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
+const call_history_schema_1 = require("./call-history.schema");
 const user_schema_1 = require("./user.schema");
 let UsersService = class UsersService {
-    constructor(userModel) {
+    constructor(userModel, callHistoryModel) {
         this.userModel = userModel;
+        this.callHistoryModel = callHistoryModel;
     }
     async onModuleInit() {
         await this.userModel.updateMany({ isOnline: true }, { isOnline: false }).exec();
@@ -124,11 +126,47 @@ let UsersService = class UsersService {
             partnerTotalEarnings: updatedPartner?.totalEarnings ?? (partner.totalEarnings ?? 0),
         };
     }
+    async recordFriendCircleCallHistory(input) {
+        await this.callHistoryModel.create({
+            callerId: input.callerId,
+            partnerId: input.partnerId,
+            callerName: input.callerName,
+            partnerName: input.partnerName,
+            startedAt: input.startedAt,
+            endedAt: input.endedAt,
+            durationMinutes: Math.max(1, input.durationMinutes),
+            chargedCoins: Math.max(0, input.chargedCoins),
+            creditedCoins: Math.max(0, input.creditedCoins),
+        });
+    }
+    async getCallHistoryForUser(userId) {
+        const rows = await this.callHistoryModel
+            .find({ $or: [{ callerId: userId }, { partnerId: userId }] })
+            .sort({ endedAt: -1 })
+            .limit(100)
+            .lean()
+            .exec();
+        return rows.map((row) => {
+            const isCaller = row.callerId === userId;
+            return {
+                id: row._id?.toString() ?? '',
+                direction: isCaller ? 'outgoing' : 'incoming',
+                counterpartyName: isCaller ? row.partnerName : row.callerName,
+                startedAt: row.startedAt,
+                endedAt: row.endedAt,
+                durationMinutes: row.durationMinutes ?? 0,
+                chargedCoins: isCaller ? row.chargedCoins ?? 0 : 0,
+                earnedCoins: isCaller ? 0 : row.creditedCoins ?? 0,
+            };
+        });
+    }
 };
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model])
+    __param(1, (0, mongoose_1.InjectModel)(call_history_schema_1.CallHistory.name)),
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        mongoose_2.Model])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map
