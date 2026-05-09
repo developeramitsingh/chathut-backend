@@ -489,6 +489,30 @@ export class UsersGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     });
   }
 
+  @SubscribeMessage('hostMuteRoomUser')
+  async handleHostMuteRoomUser(
+    client: Socket,
+    payload: { targetId: string; roomId?: string; muted: boolean },
+  ) {
+    const fromUserId = this.socketToUser.get(client.id);
+    if (!fromUserId || !payload?.targetId) {
+      return;
+    }
+
+    const targetSocketId = this.getSocketIdForUser(payload.targetId);
+    if (!targetSocketId) {
+      client.emit('callFailed', { reason: 'Target user is offline' });
+      return;
+    }
+
+    this.server.to(targetSocketId).emit('roomMuteUpdated', {
+      roomId: payload.roomId,
+      targetId: payload.targetId,
+      byUserId: fromUserId,
+      muted: !!payload.muted,
+    });
+  }
+
   private async broadcastLiveUsers() {
     const users = await this.usersService.findLiveFemaleUsers();
     this.server.emit('liveUsers', users.map(user => ({
