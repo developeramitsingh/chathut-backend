@@ -8,7 +8,7 @@ RUN npm ci
 
 # Copy source and build
 COPY . ./
-RUN npm run build
+RUN rm -rf dist tsconfig.build.tsbuildinfo && npm run build
 
 # Runtime stage
 FROM node:20-alpine AS runtime

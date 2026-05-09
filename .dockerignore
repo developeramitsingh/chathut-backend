@@ -5,6 +5,7 @@ Dockerfile
 .git
 .gitignore
 dist
+*.tsbuildinfo
 .env
 .env.*
 .idea

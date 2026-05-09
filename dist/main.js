@@ -10,7 +10,7 @@ async function bootstrap() {
     app.enableCors();
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     const port = configService.get('PORT') || 3000;
-    await app.listen(port);
+    await app.listen(port, '0.0.0.0');
     console.log(`Backend running on http://localhost:${port}`);
 }
 bootstrap();

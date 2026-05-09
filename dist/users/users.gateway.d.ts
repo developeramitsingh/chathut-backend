@@ -59,6 +59,11 @@ export declare class UsersGateway implements OnGatewayConnection, OnGatewayDisco
         targetId: string;
         message: string;
     }): Promise<void>;
+    handleHostMuteRoomUser(client: Socket, payload: {
+        targetId: string;
+        roomId?: string;
+        muted: boolean;
+    }): Promise<void>;
     private broadcastLiveUsers;
 }
 export {};

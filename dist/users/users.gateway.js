@@ -404,6 +404,23 @@ let UsersGateway = class UsersGateway {
             sentAt,
         });
     }
+    async handleHostMuteRoomUser(client, payload) {
+        const fromUserId = this.socketToUser.get(client.id);
+        if (!fromUserId || !payload?.targetId) {
+            return;
+        }
+        const targetSocketId = this.getSocketIdForUser(payload.targetId);
+        if (!targetSocketId) {
+            client.emit('callFailed', { reason: 'Target user is offline' });
+            return;
+        }
+        this.server.to(targetSocketId).emit('roomMuteUpdated', {
+            roomId: payload.roomId,
+            targetId: payload.targetId,
+            byUserId: fromUserId,
+            muted: !!payload.muted,
+        });
+    }
     async broadcastLiveUsers() {
         const users = await this.usersService.findLiveFemaleUsers();
         this.server.emit('liveUsers', users.map(user => ({
@@ -481,6 +498,12 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
     __metadata("design:returntype", Promise)
 ], UsersGateway.prototype, "handleSendDirectChatMessage", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('hostMuteRoomUser'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
+    __metadata("design:returntype", Promise)
+], UsersGateway.prototype, "handleHostMuteRoomUser", null);
 exports.UsersGateway = UsersGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {
